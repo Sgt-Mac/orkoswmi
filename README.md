@@ -15,7 +15,7 @@ OrkosWMI is a thin WMI shim intended for use with root9B's [Orkos - Credential A
 
 ## Install steps
 
-* pip install git+https://github.com/root9b.com/orkoswmi.git
+* pip install git+https://github.com/root9b/orkoswmi.git
 
 
 ## Usage
