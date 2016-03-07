@@ -159,8 +159,7 @@ _init_com()
     HRESULT hres = CoInitializeEx( 0, COINIT_MULTITHREADED);
     if( FAILED( hres))
     {
-        PyObject *err_string = PyString_FromFormat( "CoInitializeEx failed with Error Code: [0x%x](%ld)", hres, hres);
-      PyErr_SetObject(PyExc_RuntimeError, err_string);
+        PyErr_Format( PyExc_RuntimeError, "CoInitializeEx failed with Error Code: [0x%x](%ld)", hres, hres);
       goto _INIT_COM_ERROR;
     }
     //- Init COM security levels
@@ -177,8 +176,7 @@ _init_com()
     );
     if( FAILED( hres))
     {
-      PyObject *err_string = PyString_FromFormat( "CoInitializeSecurity failed with Error Code: [0x%x](%ld)", hres, hres);
-      PyErr_SetObject(PyExc_RuntimeError, err_string);
+      PyErr_Format( PyExc_RuntimeError, "CoInitializeSecurity failed with Error Code: [0x%x](%ld)", hres, hres);
       goto _INIT_COM_ERROR;
     }
     retval = 1;
@@ -471,15 +469,13 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
   //- Must have a host defined in order to be able to actually connect to a host
   if( !self->host)
   {
-    PyObject *err_string = PyString_FromFormat( "Remote 'host' is not defined...");
-    PyErr_SetObject(PyExc_TypeError, err_string);
+    PyErr_Format( PyExc_TypeError, "Remote 'host' is not defined...");
     goto PYWMI_CONNECT_ERROR;
   }
 
   if(PyString_Size( self->host) == 0)
   {
-    PyObject *err_string = PyString_FromFormat( "for argument 'host' (pos 1)");
-    PyErr_SetObject(PyExc_ValueError, err_string);
+    PyErr_Format( PyExc_ValueError, "for argument 'host' (pos 1)");
     goto PYWMI_CONNECT_ERROR;
   }
 
@@ -499,6 +495,10 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
     upn_str = upn_buf;
   }
 
+  //-rjm TESTING XXX
+  fprintf( stdout, "[%s:%d] username: [%s]\n", __FILE__, __LINE__, username_str);
+  fprintf( stdout, "[%s:%d] password: [%s]\n", __FILE__, __LINE__, password_str);
+
   //- if self->cimv2_svc or self->default_svc are not NULL,
   //-  we have already made a connection therefore we must
   //-  disconnect before we can connect again
@@ -514,14 +514,14 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
                                    IID_IWbemLocator, (LPVOID *)&(pLoc));
   if( FAILED( hres))
   {
-   PyObject *err_string = PyString_FromFormat( "Failed to create IWbemLocator object. Error Code: [0x%x](%ld)", hres, hres);
-    PyErr_SetObject(PyExc_RuntimeError, err_string);
+   PyErr_Format( PyExc_RuntimeError, "Failed to create IWbemLocator object. Error Code: [0x%x](%ld)", (LONG )hres, (LONG )hres);
     goto PYWMI_CONNECT_ERROR;
   }
 
   //- Connect to the root\cimv2 namespace with the current user
   //-  and obtain pointer cimv2_svc to make IWbemServices calls
   swprintf_s( namespac_buf, MAX_PATH, L"\\\\%S\\ROOT\\CIMV2", PyString_AsString( self->host));
+  fprintf( stdout, "namespace_buf: [%S]\n", namespac_buf);
   hres = pLoc->ConnectServer(
         _bstr_t( namespac_buf),      // Object path of wmi namespace
         _bstr_t( username_str),      // User name. NULL = current
@@ -530,12 +530,12 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
         NULL,                        // Security flags.
         _bstr_t( upn_str     ),      // Authority (for example, Kerberos) RJM-FixMe?
         0   ,                        // Contect object
-        &(self->cimv2_svc)                // pointer to IWbemServices proxy
+        &(self->cimv2_svc)           // pointer to IWbemServices proxy
     );
   if( FAILED( hres))
   {
-   PyObject *err_string = PyString_FromFormat( "Failed to create IWbemLocator object for namespace: [%S]. Error Code: [0x%x](%ld)", namespac_buf, hres, hres);
-    PyErr_SetObject(PyExc_RuntimeError, err_string);
+
+    PyErr_Format( PyExc_RuntimeError, "Failed to create cimv2_svc IWbemLocator object for namespace: [%s]. Error Code: [0x%x](%ld)", PyString_AsString( self->host), (LONG )hres, (LONG )hres);
     goto PYWMI_CONNECT_ERROR;
   }
   pLoc->Release();
@@ -543,7 +543,8 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
   //- Connect to the root\cimv2 namespace with the current user
   //-  and obtain pointer cimv2_svc to make IWbemServices calls
   memset( namespac_buf, 0, MAX_PATH);
-  swprintf_s( namespac_buf, MAX_PATH, L"\\\\%S\\root\\default",PyString_AsString( self->host));
+  swprintf_s( namespac_buf, MAX_PATH, L"\\\\%s\\root\\default",PyString_AsString( self->host));
+  fprintf( stdout, "namespace_buf: [%S]\n", namespac_buf);
   hres = pLoc->ConnectServer(
         _bstr_t( namespac_buf),      // Object path of wmi namespace
         _bstr_t( username_str),      // User name. NULL = current
@@ -556,8 +557,7 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
       );
   if( FAILED( hres))
   {
-   PyObject *err_string = PyString_FromFormat( "Failed to create IWbemLocator object for namespace: [%S]. Error Code: [0x%x](%ld)", namespac_buf, hres, hres);
-    PyErr_SetObject(PyExc_RuntimeError, err_string);
+    PyErr_Format( PyExc_RuntimeError, "Failed to create default_svc IWbemLocator object for namespace: [%s]. Error Code: [0x%x](%ld)", PyString_AsString( self->host), (LONG )hres, (LONG )hres);
     goto PYWMI_CONNECT_ERROR;
   }
   pLoc->Release();
@@ -610,8 +610,7 @@ PyWMI_file_create( PyWMIObject *self, PyObject *args, PyObject *kwargs )
 
   if( (disposition < CREATE_NEW) || (disposition > TRUNCATE_EXISTING))
   {
-    PyObject *err_string = PyString_FromFormat( "for argument 'disposition' (pos 3)");
-    PyErr_SetObject(PyExc_ValueError, err_string);
+    PyErr_Format( PyExc_ValueError, "for argument 'disposition' (pos 3)");
     goto PYWMI_FILE_CREATE_ERROR;
   }
 
@@ -632,10 +631,8 @@ PyWMI_file_create( PyWMIObject *self, PyObject *args, PyObject *kwargs )
         (LPTSTR) &lpMsgBuf,
         0, NULL );
 
-    PyObject *err_string = PyString_FromFormat( "Error Code: [0x%x](%d) %s", rval, rval, lpMsgBuf);
+    PyErr_Format( PyExc_RuntimeError, "Error Code: [0x%x](%d) %s", rval, rval, (LPTSTR *)lpMsgBuf);
     LocalFree(lpMsgBuf);
-
-    PyErr_SetObject(PyExc_RuntimeError, err_string);
   }
   else
   {
@@ -813,9 +810,7 @@ PyWMI_file_exec( PyWMIObject *self, PyObject *args, PyObject *kwargs )
                                    &pOutParams,NULL);
   if (FAILED(hres))
   {
-    PyObject *err_string = PyString_FromFormat(
-                             "Could not execute method. Error Code: [0x%x](%ld)", hres, hres);
-    PyErr_SetObject(PyExc_RuntimeError, err_string);
+    PyErr_Format( PyExc_RuntimeError, "Could not execute method. Error Code: [0x%x](%ld)", hres, hres);
   }
   else
   {
@@ -942,9 +937,8 @@ PyWMI_reg_getexpandedstringvalue( PyWMIObject *self, PyObject *args, PyObject *k
                                        &pOutParams,NULL);
   if (FAILED(hres))
   {
-    PyObject *err_string = PyString_FromFormat(
+    PyErr_Format( PyExc_RuntimeError,
            "Could not execute method: [%s]. Error Code: [0x%x](%ld)", MethodName, hres, hres);
-    PyErr_SetObject(PyExc_RuntimeError, err_string);
   }
   else
   {
@@ -1070,10 +1064,8 @@ PyWMI_file_delete( PyWMIObject *self, PyObject *args, PyObject *kwargs )
         (LPTSTR) &lpMsgBuf,
         0, NULL );
 
-    PyObject *err_string = PyString_FromFormat( "Error Code: [0x%x](%d) %s", rval, rval, lpMsgBuf);
-    LocalFree(lpMsgBuf);
+    PyErr_Format( PyExc_RuntimeError, "Error Code: [0x%x](%d) %s", rval, rval, lpMsgBuf);
 
-    PyErr_SetObject(PyExc_RuntimeError, err_string);
     LocalFree(lpMsgBuf);
   }
   else
@@ -1125,7 +1117,6 @@ PyWMI_file_get( PyWMIObject *self, PyObject *args, PyObject *kwargs )
   DWORD rval = CopyFile( remote_file_path, local_file_path, false);
   if( rval == 0)
   {
-    PyObject *err_string = 0;
     rval = GetLastError();
 
     LPVOID lpMsgBuf;
@@ -1139,10 +1130,9 @@ PyWMI_file_get( PyWMIObject *self, PyObject *args, PyObject *kwargs )
         (LPTSTR) &lpMsgBuf,
         0, NULL );
 
-    err_string = PyString_FromFormat( "Error Code: [0x%x](%d) %s", rval, rval, lpMsgBuf);
+    PyErr_Format( PyExc_RuntimeError, "Error Code: [0x%x](%d) %s", rval, rval, lpMsgBuf);
     LocalFree(lpMsgBuf);
 
-    PyErr_SetObject(PyExc_RuntimeError, err_string);
   }
   else
   {
