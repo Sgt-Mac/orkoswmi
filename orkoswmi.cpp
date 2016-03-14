@@ -53,6 +53,7 @@ PyObject *PyWMI_file_exec  ( PyWMIObject *self , PyObject *args, PyObject *kwarg
 PyObject *PyWMI_disconnect ( PyWMIObject *self);
 PyObject *PyWMI_file_delete( PyWMIObject *self , PyObject *args, PyObject *kwargs );
 PyObject *PyWMI_file_get   ( PyWMIObject *self , PyObject *args, PyObject *kwargs );
+PyObject *PyWMI_file_path_exists( PyWMIObject *self , PyObject *args, PyObject *kwargs );
 PyObject *PyWMI_reg_getexpandedstringvalue(PyWMIObject *self,PyObject *args, PyObject *kwargs );
 
 //////////////////////////////////////////////////////////////////////////////-
@@ -81,6 +82,7 @@ static PyMethodDef PyWMI_methods[] =
 {"disconnect" , _c(PyWMI_disconnect ), METH_NOARGS                  ,"Disconnects from host" },
 {"file_delete", _c(PyWMI_file_delete), METH_VARARGS | METH_KEYWORDS ,"Deletes file on host"  },
 {"file_get"   , _c(PyWMI_file_get   ), METH_VARARGS | METH_KEYWORDS ,"Copies file from host" },
+{"file_path_exists"   , _c(PyWMI_file_path_exists), METH_VARARGS | METH_KEYWORDS ,"Checks if file or directory exists on host" },
 {"reg_GetExpandedStringValue", _c(PyWMI_reg_getexpandedstringvalue), METH_VARARGS | METH_KEYWORDS ,"Returns data value from remote registry" },
 { NULL}
 };
@@ -479,12 +481,12 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
     goto PYWMI_CONNECT_ERROR;
   }
 
-  if( py_username)
+  if( py_username && (PyString_Size( py_username) > (Py_ssize_t)0))
   {
     swprintf_s( username_buf, MAX_PATH, L"%S", PyString_AsString( py_username));
     username_str = username_buf;
   }
-  if( py_password)
+  if( py_password && (PyString_Size( py_username) > (Py_ssize_t)0))
   {
     swprintf_s( password_buf, MAX_PATH, L"%S", PyString_AsString( py_password));
     password_str = password_buf;
@@ -494,10 +496,6 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
     swprintf_s( upn_buf, MAX_PATH, L"Kerberos:%S", PyString_AsString( self->host));
     upn_str = upn_buf;
   }
-
-  //-rjm TESTING XXX
-  fprintf( stdout, "[%s:%d] username: [%s]\n", __FILE__, __LINE__, username_str);
-  fprintf( stdout, "[%s:%d] password: [%s]\n", __FILE__, __LINE__, password_str);
 
   //- if self->cimv2_svc or self->default_svc are not NULL,
   //-  we have already made a connection therefore we must
@@ -521,7 +519,6 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
   //- Connect to the root\cimv2 namespace with the current user
   //-  and obtain pointer cimv2_svc to make IWbemServices calls
   swprintf_s( namespac_buf, MAX_PATH, L"\\\\%S\\ROOT\\CIMV2", PyString_AsString( self->host));
-  fprintf( stdout, "namespace_buf: [%S]\n", namespac_buf);
   hres = pLoc->ConnectServer(
         _bstr_t( namespac_buf),      // Object path of wmi namespace
         _bstr_t( username_str),      // User name. NULL = current
@@ -543,8 +540,7 @@ PyWMI_connect( PyWMIObject *self, PyObject *args, PyObject *kwargs )
   //- Connect to the root\cimv2 namespace with the current user
   //-  and obtain pointer cimv2_svc to make IWbemServices calls
   memset( namespac_buf, 0, MAX_PATH);
-  swprintf_s( namespac_buf, MAX_PATH, L"\\\\%s\\root\\default",PyString_AsString( self->host));
-  fprintf( stdout, "namespace_buf: [%S]\n", namespac_buf);
+  swprintf_s( namespac_buf, MAX_PATH, L"\\\\%S\\root\\default",PyString_AsString( self->host));
   hres = pLoc->ConnectServer(
         _bstr_t( namespac_buf),      // Object path of wmi namespace
         _bstr_t( username_str),      // User name. NULL = current
@@ -599,8 +595,8 @@ PyWMI_file_create( PyWMIObject *self, PyObject *args, PyObject *kwargs )
   DWORD     disposition    = CREATE_ALWAYS;
 
   rval = PyArg_ParseTupleAndKeywords( args, kwargs, "S|kk", kwlist, &(py_file_path),
-                                                                      &(access      ),
-                                                                      &(disposition ));
+                                                                    &(access      ),
+                                                                    &(disposition ));
   if( !rval)
   {
     goto PYWMI_FILE_CREATE_ERROR;
@@ -631,7 +627,7 @@ PyWMI_file_create( PyWMIObject *self, PyObject *args, PyObject *kwargs )
         (LPTSTR) &lpMsgBuf,
         0, NULL );
 
-    PyErr_Format( PyExc_RuntimeError, "Error Code: [0x%x](%d) %s", rval, rval, (LPTSTR *)lpMsgBuf);
+    PyErr_Format( PyExc_RuntimeError, "CreateFile: [%s] Error Code: [0x%x](%d) %s", path, rval, rval, (LPTSTR *)lpMsgBuf);
     LocalFree(lpMsgBuf);
   }
   else
@@ -679,9 +675,9 @@ PyWMI_file_write ( PyWMIObject *self , PyObject *args, PyObject *kwargs )
     if( py_handle && py_data)
     {
       handle = (HANDLE)(PyInt_AsLong( py_handle));
-      int   rval = 0;
-      int   size = PyByteArray_Size( py_data);
-      char *data = PyString_AsString( py_data);
+      int         rval = 0;
+      Py_ssize_t  size = PyByteArray_Size( py_data);
+      char       *data = PyString_AsString( py_data);
       WriteFile( handle, data, size, (LPDWORD)&rval, 0);
 
       retval = Py_BuildValue( "i", rval);
@@ -1143,6 +1139,33 @@ PYWMI_FILE_GET_ERROR:
   return( retval);
 }
 
+
+static PyObject *
+PyWMI_file_path_exists( PyWMIObject *self, PyObject *args, PyObject *kwargs )
+{
+  PyObject *retval = Py_False;
+
+  char *kwlist[] = { "remote_file_path", NULL };
+
+  PyObject *py_remote_file_path = 0;
+  char     *remote_file_path    = 0;
+  DWORD     attr                = 0;
+
+  if( !PyArg_ParseTupleAndKeywords( args, kwargs, "S", kwlist, &(py_remote_file_path)))
+  {
+    goto PYWMI_FILE_GET_ATTRIBUTES_ERROR;
+  }
+
+  remote_file_path = PyString_AsString( py_remote_file_path);
+  attr = GetFileAttributes( remote_file_path);
+  if( 0xFFFFFFFF != attr)
+  {
+    retval = Py_True;
+  }
+
+PYWMI_FILE_GET_ATTRIBUTES_ERROR:
+  return( retval);
+}
 
 //////////////////////////////////////////////////////////////////////////////-
 //- EOF
